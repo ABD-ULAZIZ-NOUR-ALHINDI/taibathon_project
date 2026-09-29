@@ -1,141 +1,186 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 import folium
 from streamlit_folium import st_folium
-import plotly.graph_objects as go
-from folium.plugins import HeatMap
-import json
-import os
+import pandas as pd
+import numpy as np
 
-# 1. إعدادات الصفحة الأساسية
+# 1. إعدادات الصفحة (يجب أن تكون الشاشة عريضة لتدعم 3 أعمدة)
 st.set_page_config(
-    page_title="نموذج تقييم محطات الشحن | المدينة المنورة",
+    page_title="GeoCharge.AI | طيبة ثون",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # إخفاء القائمة الجانبية لإعطاء مساحة للشاشات الثلاث
 )
 
-# تخصيص الألوان والخطوط باستخدام CSS
+# 2. تخصيص التصميم والألوان (CSS) ليطابق الصورة
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
-    html, body, [class*="css"]  {
+    
+    html, body, [class*="css"] {
         font-family: 'Tajawal', sans-serif;
     }
-    .main-title {
-        color: #1E3A8A;
+    
+    /* عكس اتجاه الصفحة ليدعم اللغة العربية من اليمين لليسار */
+    .stApp {
+        direction: rtl;
+    }
+    
+    /* تصميم بطاقات باقات الاستثمار */
+    .pricing-card {
+        background-color: #1E1E2E;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+        border: 1px solid #333;
+        transition: 0.3s;
+    }
+    .pricing-card:hover {
+        border-color: #00FF7F;
+        box-shadow: 0 0 10px rgba(0, 255, 127, 0.2);
+    }
+    .pro-card {
+        background-color: #23352A;
+        border: 1px solid #00FF7F;
+    }
+    .card-title {
+        color: #FFFFFF;
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    .card-price {
+        color: #00FF7F;
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
+    .card-feature {
+        color: #AAAAAA;
+        font-size: 14px;
+        margin-bottom: 5px;
+    }
+    
+    /* تصميم العناوين الرئيسية */
+    .main-header {
         text-align: center;
-        padding-bottom: 20px;
+        color: #FFFFFF;
+        padding-bottom: 10px;
+    }
+    .sub-header {
+        text-align: center;
+        color: #AAAAAA;
+        margin-bottom: 30px;
+        font-size: 18px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. القائمة الجانبية (Sidebar) لمدخلات المستخدم
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/ar/thumb/a/a2/Taibah_University_Logo.svg/1200px-Taibah_University_Logo.svg.png", width=150)
-st.sidebar.title("🎛️ لوحة التحكم الجغرافية")
-st.sidebar.markdown("قم بتعديل أوزان المعايير لتحديث الخريطة التفاعلية:")
-
-# أشرطة التمرير للأوزان (تبدأ بقيم افتراضية)
-w_grid = st.sidebar.slider("🔌 القرب من شبكة الكهرباء (154/380 kV)", 0, 100, 30)
-w_roads = st.sidebar.slider("🛣️ القرب من شبكة الطرق", 0, 100, 25)
-w_pop = st.sidebar.slider("👥 الكثافة السكانية", 0, 100, 20)
-w_poi = st.sidebar.slider("🛒 القرب من المراكز التجارية (POIs)", 0, 100, 15)
-w_slope = st.sidebar.slider("⛰️ استواء التضاريس (Slope)", 0, 100, 10)
-
-# حساب الإجمالي للتأكد من أنه يساوي 100% (تطبيع الأوزان)
-total_weight = w_grid + w_roads + w_pop + w_poi + w_slope
-if total_weight > 0:
-    weights = [w_grid/total_weight, w_roads/total_weight, w_pop/total_weight, w_poi/total_weight, w_slope/total_weight]
-else:
-    weights = [0.2, 0.2, 0.2, 0.2, 0.2]
-
-# 3. المنطقة الرئيسية (Main Content)
-st.markdown("<h1 class='main-title'>⚡ التحليل المكاني الذكي لمحطات شحن المركبات بالمدينة المنورة</h1>", unsafe_allow_html=True)
-
-# صف المؤشرات (KPI Cards)
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric(label="📍 المواقع المثلى المكتشفة", value=f"{int(total_weight * 1.5)} موقع", delta="محدث")
-with col2:
-    # محاكاة لنسبة التناسق في AHP (أقل من 0.1 تعتبر ممتازة)
-    cr_value = max(0.01, abs(0.15 - (w_grid/200)))
-    st.metric(label="📊 نسبة التناسق (CR)", value=f"{cr_value:.3f}", delta="-0.02" if cr_value < 0.1 else "+0.05", delta_color="inverse")
-with col3:
-    st.metric(label="🔋 الوفر المتوقع في الطاقة", value=f"{int(w_grid * 0.8)} %", delta="كفاءة عالية")
-with col4:
-    st.metric(label="⏱️ زمن معالجة الذكاء الاصطناعي", value="1.2 ثانية", delta="سريع")
+# 3. العنوان الرئيسي للمنصة
+st.markdown("<h1 class='main-header'>GeoCharge.AI - محاكاة تجربة المستثمر والمخطط</h1>", unsafe_allow_html=True)
+st.markdown("<p class='sub-header'>النتائج المثلى، الخريطة التفاعلية، وباقات الاستثمار لمدينة ذكية</p>", unsafe_allow_html=True)
 
 st.divider()
 
-# 4. الخريطة التفاعلية (Interactive Map)
-st.subheader("🗺️ الخريطة الحرارية للملاءمة المكانية (Suitability Heatmap)")
+# 4. تقسيم الشاشة إلى 3 أعمدة رئيسية
+# العمود الأول (اليمين): النتائج / العمود الثاني (الوسط): الخريطة / العمود الثالث (اليسار): الباقات
+col_results, col_map, col_plans = st.columns([1, 1.5, 1])
 
-# إحداثيات المدينة المنورة الافتراضية
-madinah_coords = [24.4686, 39.6111]
-m = folium.Map(location=madinah_coords, zoom_start=12, tiles='OpenStreetMap')
+# ==========================================
+# العمود الأول: نتائج المعايير (يمين الشاشة)
+# ==========================================
+with col_results:
+    st.subheader("📊 1. نتائج المعايير")
+    
+    # مربع النتيجة الكبيرة
+    st.success("**الموقع الموصى به: P-01**")
+    st.metric(label="مؤشر الملاءمة المكانية (CSI)", value="94.6 / 100", delta="جاهز للاستثمار")
+    
+    st.markdown("---")
+    st.markdown("**تقييم معايير الذكاء الاصطناعي:**")
+    
+    # محاكاة لأشرطة التقدم (Progress Bars) التي ظهرت في صورتك
+    st.caption("👥 الكثافة السكانية والطلب (91%)")
+    st.progress(91)
+    
+    st.caption("🛣️ شبكة الطرق وتدفق المرور (89%)")
+    st.progress(89)
+    
+    st.caption("🛒 نقاط الجذب والأنشطة التجارية (75%)")
+    st.progress(75)
+    
+    st.caption("⚡ محطات وسعة شبكة الكهرباء (85%)")
+    st.progress(85)
 
-# توليد بيانات عشوائية لمحاكاة مواقع الشحن (تتأثر بتغيير الأوزان في لوحة التحكم)
-np.random.seed(int(total_weight))
-latitudes = np.random.uniform(24.42, 24.52, 100)
-longitudes = np.random.uniform(39.55, 39.68, 100)
-intensities = np.random.uniform(0.5, 1.0, 100) * (weights[0] * 2) # التأثر بوزن الكهرباء كمثال
 
-heat_data = [[lat, lon, mag] for lat, lon, mag in zip(latitudes, longitudes, intensities)]
-HeatMap(heat_data, radius=15, blur=10, max_zoom=1).add_to(m)
+# ==========================================
+# العمود الثاني: الخريطة التفاعلية (وسط الشاشة)
+# ==========================================
+with col_map:
+    st.subheader("🗺️ 2. خريطة المواقع المقترحة")
+    st.caption("🟢 متصل ببيانات GIS | المواقع المتوافقة مع سعة الشبكة")
+    
+    # إنشاء خريطة بخلفية داكنة لتناسب التصميم
+    m = folium.Map(location=[24.4686, 39.6111], zoom_start=13, tiles='CartoDB dark_matter')
+    
+    # إضافة النقطة P-01 (الموقع الأمثل)
+    folium.Marker(
+        [24.4686, 39.6111],
+        popup="الموقع الأمثل P-01",
+        tooltip="P-01 الموقع الأمثل للاستثمار (94.6%)",
+        icon=folium.Icon(color="green", icon="bolt", prefix='fa')
+    ).add_to(m)
+    
+    # إضافة نقطة أخرى بديلة
+    folium.Marker(
+        [24.4500, 39.6200],
+        popup="موقع بديل P-02",
+        tooltip="P-02 موقع بديل (88.2%)",
+        icon=folium.Icon(color="purple", icon="info-sign")
+    ).add_to(m)
 
-# عرض الخريطة في الواجهة
-st_folium(m, width=1200, height=500, returned_objects=[])
+    # عرض الخريطة
+    st_folium(m, width=100, height=450, returned_objects=[], use_container_width=True)
 
-st.divider()
 
-# 5. الرسوم البيانية التوضيحية
-st.subheader("📈 التحليل التقني للأوزان: الخبراء (AHP) مقابل الذكاء الاصطناعي (ML)")
-
-col_chart1, col_chart2 = st.columns(2)
-
-categories = ['شبكة الكهرباء', 'شبكة الطرق', 'الكثافة السكانية', 'المراكز التجارية', 'التضاريس']
-current_weights = [w_grid, w_roads, w_pop, w_poi, w_slope]
-
-# --- الكود الجديد لربط الذكاء الاصطناعي ---
-# قراءة الأوزان من ملف الذكاء الاصطناعي
-ai_weights_list = [20, 20, 20, 20, 20] # قيم افتراضية في حال لم يتم تدريب النموذج بعد
-if os.path.exists('models/ai_weights.json'):
-    with open('models/ai_weights.json', 'r', encoding='utf-8') as f:
-        ai_data = json.load(f)
-        # سحب القيم وترتيبها لتتطابق مع الفئات
-        ai_weights_list = [
-            ai_data["شبكة الكهرباء"],
-            ai_data["شبكة الطرق"],
-            ai_data["الكثافة السكانية"],
-            ai_data["المراكز التجارية"],
-            ai_data["التضاريس"]
-        ]
-
-with col_chart1:
-    # المخطط الراداري للأوزان الحالية
-    fig_radar = go.Figure()
-    fig_radar.add_trace(go.Scatterpolar(
-        r=current_weights,
-        theta=categories,
-        fill='toself',
-        name='أوزان المستخدم',
-        line_color='#1E3A8A'
-    ))
-    fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, max(max(current_weights), max(ai_weights_list)) + 10])),
-        showlegend=False,
-        title="توزيع الأوزان المكانية (Radar Chart)"
-    )
-    st.plotly_chart(fig_radar, use_container_width=True)
-
-with col_chart2:
-    # مقارنة بين أوزان AHP وأوزان الذكاء الاصطناعي الحقيقية
-    fig_bar = go.Figure(data=[
-        go.Bar(name='تفضيلات المستخدم (AHP)', x=categories, y=current_weights, marker_color='#3B82F6'),
-        go.Bar(name='تعلم الآلة (Random Forest)', x=categories, y=ai_weights_list, marker_color='#10B981')
-    ])
-    fig_bar.update_layout(barmode='group', title="مقارنة الذكاء الاصطناعي بالتفضيلات البشرية")
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-st.caption("تم تطوير هذا النموذج الأولي للمشاركة في مسابقة طيبة ثون 2026 - مسار الابتكار التقني والصناعي.")
+# ==========================================
+# العمود الثالث: باقات الاستثمار (يسار الشاشة)
+# ==========================================
+with col_plans:
+    st.subheader("💼 3. باقات الاستثمار")
+    
+    # باقة 1: Starter
+    st.markdown("""
+    <div class="pricing-card">
+        <div class="card-title">باقة الموقع المفرد (Starter)</div>
+        <div class="card-feature">لأصحاب الأراضي والمستثمرين الأفراد</div>
+        <div class="card-price">999 ر.س / موقع</div>
+        <div class="card-feature">✔️ فحص سعة المحول</div>
+        <div class="card-feature">✔️ حساب الجدوى والعائد</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # باقة 2: Pro (المميزة)
+    st.markdown("""
+    <div class="pricing-card pro-card">
+        <div class="card-title">⭐ باقة مشغلي الشواحن (CPO Pro)</div>
+        <div class="card-feature">لشركات شحن المركبات وسلاسل المحطات</div>
+        <div class="card-price">3,499 ر.س / شهر</div>
+        <div class="card-feature">✔️ خريطة المدينة كاملة</div>
+        <div class="card-feature">✔️ تنبؤات الطلب بالذكاء الاصطناعي</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # باقة 3: Enterprise
+    st.markdown("""
+    <div class="pricing-card">
+        <div class="card-title">باقة المخطط الحضري (Enterprise)</div>
+        <div class="card-feature">للأمانات، هيئات التطوير، ووزارة الطاقة</div>
+        <div class="card-price">ترخيص سنوي مخصص</div>
+        <div class="card-feature">✔️ نمذجة GIS غير محدودة</div>
+        <div class="card-feature">✔️ تكامل مباشر مع API</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("اختر باقتك وابدأ نشر المحطات 🚀", use_container_width=True):
+        st.success("تم تسجيل طلبك بنجاح!")
