@@ -48,7 +48,9 @@ st.markdown("""
 # ==============================================================
 # 2. القائمة الجانبية وحساب الأوزان (الذكاء المكاني)
 # ==============================================================
-st.sidebar.markdown("<h2 style='text-align:center; color:#00E676;'>GeoCharge AI</h2>", unsafe_allow_html=True)
+st.sidebar.image("logo_black_no_bg.png", use_container_width=True)
+# text rather than image for the title
+# st.sidebar.markdown("<h2 style='text-align:center; color:#00E676;'>GeoCharge AI</h2>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 st.sidebar.markdown("**محرك القرار (MCDA):**")
 
