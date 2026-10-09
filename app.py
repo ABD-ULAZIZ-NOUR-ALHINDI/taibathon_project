@@ -1,231 +1,226 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import folium
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
-from folium.plugins import HeatMap
-import json
-import os
 
-# 1. إعدادات الصفحة الأساسية
+# ==============================================================
+# 1. إعدادات الصفحة والهوية البصرية الجديدة (GeoCharge AI)
+# ==============================================================
 st.set_page_config(
-    page_title="نموذج تقييم محطات الشحن | المدينة المنورة",
+    page_title="GeoCharge AI | جيوشارج للذكاء الاصطناعي",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# تخصيص الألوان والخطوط ودمج تصميم البطاقات الحديث باستخدام CSS
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
-    html, body, [class*="css"]  {
-        font-family: 'Tajawal', sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+    
+    html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
+    .stApp { direction: rtl; background-color: #0A111F; }
+    
+    .brand-title {
+        text-align: center; background: linear-gradient(90deg, #00E676 0%, #00B4D8 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-size: 3.5rem; font-weight: 900; margin-bottom: 0px; padding-bottom: 0px;
     }
-    /* دعم اللغة العربية للواجهة */
-    .stApp {
-        direction: rtl;
-    }
-    .main-title {
-        color: #1E3A8A;
-        text-align: center;
-        padding-bottom: 20px;
-        font-weight: bold;
-    }
-    /* تصميم بطاقات الاستثمار */
+    .brand-subtitle { text-align: center; color: #9CA3AF; font-size: 1.2rem; margin-top: -10px; margin-bottom: 30px; }
+    
     .pricing-card {
-        background-color: #1E1E2E; padding: 20px; border-radius: 10px;
-        margin-bottom: 15px; border: 1px solid #333; transition: 0.3s;
+        background-color: #121E36; padding: 20px; border-radius: 15px;
+        margin-bottom: 15px; border: 1px solid #1F2D4A; transition: 0.3s;
     }
-    .pricing-card:hover { border-color: #00FF7F; box-shadow: 0 0 10px rgba(0, 255, 127, 0.2); }
-    .pro-card { background-color: #1A2E22; border: 1px solid #00FF7F; }
-    .card-title { color: #FFFFFF; font-size: 18px; font-weight: bold; margin-bottom: 10px; }
-    .card-price { color: #00FF7F; font-size: 22px; font-weight: bold; margin-bottom: 15px; }
-    .card-feature { color: #AAAAAA; font-size: 14px; margin-bottom: 5px; }
+    .pricing-card:hover { border-color: #00B4D8; box-shadow: 0 0 15px rgba(0, 180, 216, 0.3); }
+    .pro-card { background-color: #0D2B33; border: 1.5px solid #00E676; }
+    .card-title { color: #FFFFFF; font-size: 20px; font-weight: 900; margin-bottom: 10px; }
+    .card-price { color: #00E676; font-size: 24px; font-weight: bold; margin-bottom: 15px; }
+    .card-feature { color: #B0BEC5; font-size: 15px; margin-bottom: 8px; }
+    
+    .ai-justification {
+        background-color: #0A1929; border-right: 4px solid #00B4D8;
+        padding: 15px; border-radius: 8px; color: #E0E0E0; font-size: 0.95rem; margin-top: 15px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. القائمة الجانبية (Sidebar) لمدخلات المستخدم
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/ar/thumb/a/a2/Taibah_University_Logo.svg/1200px-Taibah_University_Logo.svg.png", width=150)
-st.sidebar.title("🎛️ لوحة التحكم الجغرافية")
-st.sidebar.markdown("قم بتعديل أوزان المعايير لتحديث الخريطة التفاعلية:")
+# ==============================================================
+# 2. القائمة الجانبية وحساب الأوزان (الذكاء المكاني)
+# ==============================================================
+st.sidebar.markdown("<h2 style='text-align:center; color:#00E676;'>GeoCharge AI</h2>", unsafe_allow_html=True)
+st.sidebar.markdown("---")
+st.sidebar.markdown("**محرك القرار (MCDA):**")
 
-w_grid = st.sidebar.slider("🔌 القرب من شبكة الكهرباء (154/380 kV)", 0, 100, 30)
-w_roads = st.sidebar.slider("🛣️ القرب من شبكة الطرق", 0, 100, 25)
-w_pop = st.sidebar.slider("👥 الكثافة السكانية", 0, 100, 20)
-w_poi = st.sidebar.slider("🛒 القرب من المراكز التجارية (POIs)", 0, 100, 15)
-w_slope = st.sidebar.slider("⛰️ استواء التضاريس (Slope)", 0, 100, 10)
+w_grid = st.sidebar.slider("⚡ القرب من شبكة الكهرباء", 0, 100, 35)
+w_roads = st.sidebar.slider("🛣️ تدفق المرور", 0, 100, 25)
+w_pop = st.sidebar.slider("👥 الكثافة السكانية", 0, 100, 15)
+w_poi = st.sidebar.slider("🛒 الأنشطة التجارية", 0, 100, 15)
+w_slope = st.sidebar.slider("⛰️ استواء التضاريس", 0, 100, 10)
 
+# تطبيع الأوزان (Normalization)
 total_weight = w_grid + w_roads + w_pop + w_poi + w_slope
-if total_weight > 0:
-    weights = [w_grid/total_weight, w_roads/total_weight, w_pop/total_weight, w_poi/total_weight, w_slope/total_weight]
-else:
-    weights = [0.2, 0.2, 0.2, 0.2, 0.2]
+if total_weight == 0: total_weight = 1 
 
-# 3. المنطقة العلوية (المؤشرات الرئيسية كما في كودك القديم)
-st.markdown("<h1 class='main-title'>⚡ التحليل المكاني الذكي لمحطات شحن المركبات بالمدينة المنورة</h1>", unsafe_allow_html=True)
+n_grid = w_grid / total_weight
+n_roads = w_roads / total_weight
+n_pop = w_pop / total_weight
+n_poi = w_poi / total_weight
+n_slope = w_slope / total_weight
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric(label="📍 المواقع المثلى المكتشفة", value=f"{int(total_weight * 1.5)} موقع", delta="محدث")
-with col2:
-    cr_value = max(0.01, abs(0.15 - (w_grid/200)))
-    st.metric(label="📊 نسبة التناسق (CR)", value=f"{cr_value:.3f}", delta="-0.02" if cr_value < 0.1 else "+0.05", delta_color="inverse")
-with col3:
-    st.metric(label="🔋 الوفر المتوقع في الطاقة", value=f"{int(w_grid * 0.8)} %", delta="كفاءة عالية")
-with col4:
-    st.metric(label="⏱️ زمن معالجة الذكاء الاصطناعي", value="1.2 ثانية", delta="سريع")
-
-st.divider()
-
+# مفتاح ذكي لتتبع تغييرات الأشرطة
+slider_state = f"{w_grid}_{w_roads}_{w_pop}_{w_poi}_{w_slope}"
 
 # ==============================================================
-# 4. التحديث الجديد: قسم الأعمدة الثلاثة (نتائج - خريطة - باقات)
+# 3. المنطقة العلوية
+# ==============================================================
+st.markdown("<h1 class='brand-title'>GeoCharge AI</h1>", unsafe_allow_html=True)
+st.markdown("<p class='brand-subtitle'>جيوشارج للذكاء الاصطناعي | المنصة الذكية لقرارات النشر المكاني</p>", unsafe_allow_html=True)
+
+col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+with col_k1: st.metric("📍 المواقع المرشحة", "3 مناطق كبرى", "بيانات جغرافية حقيقية")
+with col_k2: st.metric("📊 موثوقية التحليل", "عالية", "خوارزميات AI")
+with col_k3: st.metric("🔋 كفاءة العائد (ROI)", "مُحسّنة", "تحديث لحظي")
+with col_k4: st.metric("⏱️ زمن اتخاذ القرار", "0.2 ثانية", "محرك تفاعلي")
+st.divider()
+
+# ==============================================================
+# 4. البيانات الحقيقية وحساب الملاءمة
+# ==============================================================
+data = {
+    'ID': ['P-01', 'P-02', 'P-03'],
+    'Name': ['محيط النور مول (المنطقة المركزية التجارية)', 'محطة قطار الحرمين السريع', 'حديقة الملك فهد المركزية'],
+    'Latitude': [24.49605, 24.47098, 24.4130],
+    'Longitude': [39.59532, 39.69969, 39.6300],
+    'Grid_Score': [85, 98, 70],
+    'Road_Score': [90, 95, 65],
+    'Pop_Score':  [80, 50, 85],
+    'POI_Score':  [95, 70, 90],
+    'Slope_Score':[90, 100, 80],
+    'Justification': [
+        "تم اختيار هذا الموقع بناءً على قربه المباشر من مجمع النور التجاري على طريق الملك عبدالله (الدائري الثاني). هذا الموقع يعتبر نقطة جذب هائلة للسكان، وهو مثالي لتطبيق استراتيجية (Destination Charging) حيث يمكن للزوار شحن مركباتهم أثناء التسوق.",
+        "موقع استراتيجي يخدم محطة قطار الحرمين السريع. يتميز ببنية تحتية كهربائية هائلة للضغط العالي وارتباط مباشر بالطرق الإقليمية السريعة، مما يجعله الأنسب لتركيب شواحن فائقة السرعة (DC) لخدمة المسافرين عبر المدن.",
+        "تم ترشيح هذا الموقع لكونه وجهة ترفيهية واسعة تقصدها العائلات لساعات طويلة. وبسبب كثافة الإقبال ومدة البقاء الطويلة، يعتبر هذا الموقع مثالياً لنشر شبكة من شواحن التيار المتردد (AC) الفعالة من حيث التكلفة."
+    ]
+}
+df = pd.DataFrame(data)
+
+# حساب النتيجة بعد التطبيع
+df['Dynamic_Score'] = (
+    (df['Grid_Score'] * n_grid) +
+    (df['Road_Score'] * n_roads) +
+    (df['Pop_Score']  * n_pop) +
+    (df['POI_Score']  * n_poi) +
+    (df['Slope_Score']* n_slope)
+)
+# ترتيب المواقع من الأفضل للأقل بناءً على المتغيرات الحية
+df_sorted = df.sort_values(by='Dynamic_Score', ascending=False)
+
+# ==============================================================
+# 5. الأعمدة الثلاثة (النتائج التفاعلية - خريطة - باقات)
 # ==============================================================
 col_results, col_map, col_plans = st.columns([1, 1.5, 1])
 
-# 1. قراءة البيانات وحساب النتيجة الديناميكية (قبل عرضها في الأعمدة)
-try:
-    df = pd.read_csv('madinah_locations.csv')
-    df['Dynamic_Score'] = (
-        (df['Grid_Score'] * (w_grid / 100)) +
-        (df['Road_Score'] * (w_roads / 100)) +
-        (df['Pop_Score'] * (w_pop / 100)) +
-        (df['POI_Score'] * (w_poi / 100)) +
-        (df['Slope_Score'] * (w_slope / 100))
-    )
-    df_sorted = df.sort_values(by='Dynamic_Score', ascending=False)
-    best_location = df_sorted.iloc[0]
-    file_exists = True
-except FileNotFoundError:
-    file_exists = False
-
-# --- العمود الأول: النتائج (يمين الشاشة) ---
 with col_results:
-    st.subheader("📊 1. تقييم المعايير")
+    st.markdown("<h3 style='color:#00B4D8;'>1. استكشاف المواقع المرشحة</h3>", unsafe_allow_html=True)
     
-    if file_exists:
-        st.success(f"**الموقع الأمثل الموصى به: {best_location['Location_ID']}**")
-        st.caption(f"بنسبة توافق: {best_location['Dynamic_Score']:.1f}%")
-    else:
-        st.error("ملف البيانات غير موجود.")
+    # السر هنا: نستخدم slider_state كمفتاح. كلما تغيرت الأشرطة، تتحدث القائمة لتختار الأفضل تلقائياً.
+    selected_name = st.selectbox(
+        "📌 المواقع مرتبة من الأفضل للأقل:", 
+        df_sorted['Name'].tolist(),
+        key=slider_state
+    )
     
-    st.markdown("**أوزان الملاءمة المكانية:**")
-    st.caption(f"🔌 شبكة الكهرباء ({w_grid}%)")
-    st.progress(int(w_grid))
+    # استخراج بيانات الموقع المختار
+    selected_location = df[df['Name'] == selected_name].iloc[0]
     
-    st.caption(f"🛣️ شبكة الطرق ({w_roads}%)")
-    st.progress(int(w_roads))
+    # التقييم
+    score = min(int(selected_location['Dynamic_Score']), 100)
+    st.markdown(f"<h2 style='text-align:center; color:#00E676; margin-top:10px;'>التقييم: {score:.1f}%</h2>", unsafe_allow_html=True)
+    st.progress(score)
     
-    st.caption(f"👥 الكثافة السكانية ({w_pop}%)")
-    st.progress(int(w_pop))
-    
-    st.caption(f"🛒 الأنشطة التجارية ({w_poi}%)")
-    st.progress(int(w_poi))
-    
-    st.caption(f"⛰️ استواء التضاريس ({w_slope}%)")
-    st.progress(int(w_slope))
+    # عرض المبرر المتغير
+    st.markdown(f"""
+        <div class="ai-justification">
+            <b>تحليل الذكاء الاصطناعي للموقع:</b><br><br>
+            {selected_location['Justification']}
+        </div>
+    """, unsafe_allow_html=True)
 
-# --- العمود الثاني: الخريطة (وسط الشاشة) ---
-# --- العمود الثاني: الخريطة (وسط الشاشة) ---
 with col_map:
-    st.subheader("🗺️ 2. الخريطة الحرارية (Heatmap)")
-
-    if file_exists:
-        # التعديل هنا: جعل مركز الخريطة يطابق إحداثيات أفضل موقع لتتبعه الكاميرا تلقائياً
-        dynamic_center = [best_location['Latitude'], best_location['Longitude']]
-        m = folium.Map(location=dynamic_center, zoom_start=14, tiles='OpenStreetMap')
+    st.markdown("<h3 style='color:#00B4D8;'>2. الخريطة التفاعلية (Live Map)</h3>", unsafe_allow_html=True)
+    
+    dynamic_center = [selected_location['Latitude'], selected_location['Longitude']]
+    m = folium.Map(location=dynamic_center, zoom_start=14, tiles='OpenStreetMap')
+    
+    for index, row in df.iterrows():
+        is_selected = (row['ID'] == selected_location['ID'])
+        marker_color = "green" if is_selected else "blue"
+        icon_type = "bolt" if is_selected else "info-sign"
         
-        # رسم الخريطة الحرارية بناءً على النتيجة الديناميكية
-        heat_data = [[row['Latitude'], row['Longitude'], row['Dynamic_Score']] for index, row in df.iterrows()]
-        HeatMap(heat_data, radius=15, blur=15, max_zoom=1).add_to(m)
-        
-        # وضع علامة خضراء بارزة جداً على أفضل موقع
         folium.Marker(
-            dynamic_center,
-            popup=f"أفضل موقع: {best_location['Location_ID']}",
-            tooltip=f"الموقع الأمثل للاستثمار: {best_location['Location_ID']} (التقييم: {best_location['Dynamic_Score']:.1f}%)",
-            icon=folium.Icon(color="green", icon="bolt", prefix='fa')
+            [row['Latitude'], row['Longitude']],
+            popup=row['Name'],
+            tooltip=f"{row['Name']} (تقييم: {row['Dynamic_Score']:.1f}%)",
+            icon=folium.Icon(color=marker_color, icon=icon_type, prefix='fa')
         ).add_to(m)
         
-        # إضافة دائرة حمراء حول الموقع لتمييزه بشكل قاطع عن البقع الحرارية المحيطة
-        folium.Circle(
-            location=dynamic_center,
-            radius=400,
-            color='red',
-            weight=3,
-            fill=False
-        ).add_to(m)
-
-    else:
-        # خريطة افتراضية في حال غياب الملف
-        m = folium.Map(location=[24.4686, 39.6111], zoom_start=12, tiles='OpenStreetMap')
+        if is_selected:
+            folium.Circle(
+                location=[row['Latitude'], row['Longitude']],
+                radius=400,
+                color='red',
+                weight=3,
+                fill=False
+            ).add_to(m)
 
     st_folium(m, width=100, height=450, returned_objects=[], use_container_width=True)
-# --- العمود الثالث: باقات الاستثمار (يسار الشاشة) ---
+
 with col_plans:
-    st.subheader("💼 3. باقات الاستثمار")
+    st.markdown("<h3 style='color:#00B4D8;'>3. نماذج الأعمال (Business Models)</h3>", unsafe_allow_html=True)
     st.markdown("""
     <div class="pricing-card">
-        <div class="card-title">باقة الموقع المفرد (Starter)</div>
-        <div class="card-feature">لأصحاب الأراضي والمستثمرين</div>
-        <div class="card-price">999 ر.س / موقع</div>
-        <div class="card-feature">✔️ فحص سعة المحول</div>
-        <div class="card-feature">✔️ حساب الجدوى والعائد</div>
+        <div class="card-title">باقة أصحاب العقارات</div>
+        <div class="card-feature">للمراكز التجارية، الفنادق، والمجمعات</div>
+        <div class="card-price">تحليل الموقع وتحديد السعة</div>
+        <div class="card-feature">✔️ فحص فني لمحولات شبكة الكهرباء</div>
+        <div class="card-feature">✔️ دراسة الجدوى وتوقعات العائد المالي</div>
     </div>
     <div class="pricing-card pro-card">
-        <div class="card-title">⭐ باقة مشغلي الشواحن (CPO Pro)</div>
-        <div class="card-feature">لشركات شحن المركبات وسلاسل المحطات</div>
-        <div class="card-price">3,499 ر.س / شهر</div>
-        <div class="card-feature">✔️ خريطة المدينة كاملة وتنبؤات الطلب</div>
+        <div class="card-title">⭐ باقة مشغلي الشبكات (CPO)</div>
+        <div class="card-feature">لشركات النقل ومستثمري البنية التحتية</div>
+        <div class="card-price">رخصة وصول API لبيانات المدينة</div>
+        <div class="card-feature">✔️ خريطة متكاملة وتنبؤات AI للطلب المستقبلي</div>
+        <div class="card-feature">✔️ تكامل مع خطط الأمانة لنمو المدن الذكية</div>
     </div>
     """, unsafe_allow_html=True)
 
+st.divider()
+
 # ==============================================================
-# 5. المنطقة السفلية: كودك القديم للرسوم البيانية (مقارنة AI و AHP)
+# 6. التحليل التقني للموقع المُختار
 # ==============================================================
-st.subheader("📈 4. التحليل التقني للأوزان: الخبراء (AHP) مقابل الذكاء الاصطناعي (ML)")
+st.markdown(f"<h3 style='color:#00B4D8; text-align:center;'>4. البصمة المكانية لـ: {selected_location['Name']}</h3>", unsafe_allow_html=True)
 
-col_chart1, col_chart2 = st.columns(2)
-categories = ['شبكة الكهرباء', 'شبكة الطرق', 'الكثافة السكانية', 'المراكز التجارية', 'التضاريس']
-current_weights = [w_grid, w_roads, w_pop, w_poi, w_slope]
+categories = ['سعة الكهرباء', 'شبكة الطرق', 'الكثافة السكانية', 'الأنشطة التجارية', 'استواء الأرض']
+selected_scores = [selected_location['Grid_Score'], selected_location['Road_Score'], selected_location['Pop_Score'], selected_location['POI_Score'], selected_location['Slope_Score']]
 
-# قراءة الأوزان من ملف الذكاء الاصطناعي (كما برمجتها سابقاً)
-ai_weights_list = [20, 20, 20, 20, 20]
-if os.path.exists('models/ai_weights.json'):
-    with open('models/ai_weights.json', 'r', encoding='utf-8') as f:
-        ai_data = json.load(f)
-        ai_weights_list = [
-            ai_data.get("شبكة الكهرباء", 20),
-            ai_data.get("شبكة الطرق", 20),
-            ai_data.get("الكثافة السكانية", 20),
-            ai_data.get("المراكز التجارية", 20),
-            ai_data.get("التضاريس", 20)
-        ]
-
-with col_chart1:
-    fig_radar = go.Figure()
-    fig_radar.add_trace(go.Scatterpolar(
-        r=current_weights,
-        theta=categories,
-        fill='toself',
-        name='أوزان المستخدم',
-        line_color='#1E3A8A'
-    ))
-    fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, max(max(current_weights), max(ai_weights_list)) + 10])),
-        showlegend=False,
-        title="توزيع الأوزان المكانية (Radar Chart)"
-    )
-    st.plotly_chart(fig_radar, use_container_width=True)
-
-with col_chart2:
-    fig_bar = go.Figure(data=[
-        go.Bar(name='تفضيلات المستخدم (AHP)', x=categories, y=current_weights, marker_color='#3B82F6'),
-        go.Bar(name='تعلم الآلة (Random Forest)', x=categories, y=ai_weights_list, marker_color='#10B981')
-    ])
-    fig_bar.update_layout(barmode='group', title="مقارنة الذكاء الاصطناعي بالتفضيلات البشرية")
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-st.caption("تم تطوير هذا النموذج الأولي للمشاركة في مسابقة طيبة ثون 2026 - مسار الابتكار التقني والصناعي.")
+fig_radar = go.Figure()
+fig_radar.add_trace(go.Scatterpolar(
+    r=selected_scores,
+    theta=categories,
+    fill='toself',
+    name=selected_location['Name'],
+    line_color='#00E676'
+))
+fig_radar.update_layout(
+    polar=dict(
+        radialaxis=dict(visible=True, range=[0, 100], gridcolor="#1F2D4A"),
+        bgcolor="#0A111F"
+    ),
+    showlegend=False,
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font=dict(color='#B0BEC5', family='Cairo')
+)
+st.plotly_chart(fig_radar, use_container_width=True)
